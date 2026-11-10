@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>국회 자료요구 관리 · 시작</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">A</span><span><strong>국회 자료요구 관리</strong><small>총괄 담당 작업 공간</small></span></div>
+    <nav aria-label="화면 이동">
+      <a class="active" href="index.html" aria-current="page">시작 화면</a>
+      <a href="assign.html">배분</a>
+      <span class="disabled" title="S6에서 제공">현업 회신 <em>S6</em></span>
+      <span class="disabled" title="S8에서 제공">취합 <em>S8</em></span>
+    </nav>
+  </header>
+  <main class="shell">
+    <div class="eyebrow">START · 업무 현황</div>
+    <section class="hero">
+      <div>
+        <h1>오늘의 요구자료 업무</h1>
+        <p>요구서를 문항별로 등록하고, 기준표 후보를 확인한 뒤 주관 과를 확정합니다.</p>
+      </div>
+      <a class="button primary" href="assign.html">접수 · 배분 시작 <span aria-hidden="true">→</span></a>
+    </section>
+    <section class="stats" aria-label="저장 현황">
+      <div class="stat"><span>전체 문항</span><strong id="total">0</strong><small>브라우저 저장</small></div>
+      <div class="stat"><span>접수</span><strong id="received">0</strong><small>배분 대기</small></div>
+      <div class="stat"><span>배분확정</span><strong id="confirmed">0</strong><small>주관 과 지정 완료</small></div>
+    </section>
+    <section class="card next-card">
+      <div class="step-icon">01</div>
+      <div><h2>접수와 배분</h2><p>PDF 여러 건 또는 문항목록 CSV를 읽어 접수합니다. 후보 3순위와 규칙 근거를 살펴보고 과를 확정하세요.</p></div>
+      <a class="text-link" href="assign.html">배분 화면 열기 →</a>
+    </section>
+    <p class="footnote">자료와 변경 기록은 현재 이 브라우저의 localStorage에만 저장됩니다. 다른 브라우저나 기기와 동기화되지 않습니다.</p>
+  </main>
+  <script src="engine.js"></script>
+  <script src="common.js"></script>
+  <script>
+    try {
+      const cases = RequestCommon.getCases();
+      document.getElementById('total').textContent = cases.length;
+      document.getElementById('received').textContent = cases.filter(x => x.status === '접수').length;
+      document.getElementById('confirmed').textContent = cases.filter(x => x.status === '배분확정').length;
+    } catch (error) {
+      document.querySelector('.footnote').textContent = error.message;
+    }
+  </script>
+</body>
+</html>
