@@ -99,17 +99,28 @@
         candidateCell.append(row);
       });
       if (tied || !candidates.length) candidateCell.append(el('div', 'warning', tied ? '동순위 · 확인필요' : '무일치 · 확인필요'));
+      const historyCell = el('div', 'history-preview small muted', '과거 이력 조회 중…');
+      candidateCell.append(historyCell);
+      RequestCommon.renderHistory(historyCell, candidates[0]?.근거키워드).catch(error => {
+        historyCell.textContent = `과거 이력 오류: ${error.message}`;
+      });
       const selectCell = el('td');
       const lead = selectForLead(item.assignment?.lead || defaultLead);
       const support = supportPicker(item);
       selectCell.append(lead, support);
       const actionCell = el('td');
+      const reassignRequest = [...item.events].reverse().find(event => event.type === '재배정요청');
+      if (item.status === '재배정요청' && reassignRequest) {
+        actionCell.append(el('div', 'warning', `재배정 사유: ${reassignRequest.reason}`));
+        actionCell.append(el('div', 'small', `희망 과: ${reassignRequest.suggestedDepartment || '미지정'}`));
+      }
       const reason = el('input', 'reason-input');
       reason.type = 'text';
       reason.placeholder = '수정·확인 사유';
       reason.setAttribute('aria-label', `${item.의원} ${item.문항번호}번 수정 또는 확인 사유`);
-      const button = el('button', 'button primary row-action', item.status === '배분확정' ? '배분 수정' : '배분 확정');
+      const button = el('button', 'button primary row-action', item.status === '재배정요청' ? '다시 배분' : item.status === '배분확정' ? '배분 수정' : '배분 확정');
       button.type = 'button';
+      button.disabled = !['접수', '배분확정', '재배정요청'].includes(item.status);
       button.addEventListener('click', async () => {
         const selectedSupport = [...support.querySelectorAll('input:checked')].map(input => input.value);
         const isRule = !tied && !!defaultLead && lead.value === defaultLead && selectedSupport.length === 0 && !item.assignment;

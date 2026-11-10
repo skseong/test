@@ -2,9 +2,12 @@
 (function (root) {
   'use strict';
   const CSV_FIELDS = ['파일명', '위원회', '의원', '제출기한', '문항번호', '요구내용', '세부항목', '비고'];
+  const LOCAL_KEY = 'assembly-request-cases-v2';
+  const isVercel = /(^|\.)vercel\.app$/.test(location.hostname);
   let cases = [];
   let rawDb = { cases: [] };
   let orgPromise;
+  const historyCache = new Map();
 
   function loadOrg() {
     if (!orgPromise) orgPromise = readData('A부_조직도_26개과.csv').then(csv => {
@@ -15,9 +18,14 @@
   }
 
   async function request(method, body) {
-    if (method === 'POST' && root.RequestFlow) {
-      root.RequestFlow.apply(rawDb, body, await loadOrg());
+    if (!isVercel) {
+      if (method === 'GET') return readBrowserDb();
+      const changed = root.RequestFlow.apply(rawDb, body, await loadOrg());
+      localStorage.setItem(LOCAL_KEY, JSON.stringify(changed.db));
+      rawDb = changed.db;
+      return changed.result;
     }
+    if (method === 'POST' && root.RequestFlow) root.RequestFlow.apply(rawDb, body, await loadOrg());
     const response = await fetch('/api/app', {
       method, credentials: 'same-origin', cache: 'no-store',
       headers: body ? { 'Content-Type': 'application/json' } : {},
@@ -27,6 +35,39 @@
     if (!response.ok || !data) throw new Error(data?.error || '서버 API에 연결하지 못했습니다. Vercel 배포 주소에서 열어 주세요.');
     return data;
   }
+
+  function readBrowserDb() {
+    try {
+      const saved = localStorage.getItem(LOCAL_KEY);
+      if (saved) {
+        const db = JSON.parse(saved);
+        if (Array.isArray(db.cases)) return db;
+      }
+      const old = JSON.parse(localStorage.getItem('assembly-request-cases-v1') || '[]');
+      if (!Array.isArray(old)) return { cases: [] };
+      const db = { cases: old.map((item, index) => ({
+        caseId: item.id || `C-legacy-${index + 1}`, version: 1,
+        receipt: { receivedAt: '', committee: item.위원회 || '', member: item.의원 || '',
+          sourceRef: item.파일명 || '', dueAt: item.제출기한 || '', format: '' },
+        question: { number: String(item.문항번호 || ''), text: item.요구내용 || '',
+          periodStart: '', periodEnd: '', note: [item.세부항목, item.비고].filter(Boolean).join(' / ') },
+        status: item.status || '접수', assignment: item.assignment ? { ...item.assignment, round: 1 } : null,
+        replies: [], events: Array.isArray(item.events) ? item.events : []
+      })) };
+      if (old.length) localStorage.setItem(LOCAL_KEY, JSON.stringify(db));
+      return db;
+    } catch { throw new Error('브라우저 저장 기록을 읽지 못했습니다.'); }
+  }
+
+  function showStorage() {
+    for (const badge of document.querySelectorAll('.storage-badge')) {
+      badge.textContent = isVercel ? '● Vercel 비공개 저장소' : '● 이 브라우저에 저장';
+    }
+    const label = document.getElementById('storage-label');
+    if (label) label.textContent = isVercel ? '비공개 저장소' : '브라우저 저장';
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', showStorage);
+  else showStorage();
 
   async function loadCases() {
     rawDb = await request('GET');
@@ -38,6 +79,38 @@
       세부항목: '', 비고: item.question.note
     }));
     return cases;
+  }
+
+  async function getHistory(keyword) {
+    const key = String(keyword || '').trim();
+    if (!key || !isVercel) return null;
+    if (!historyCache.has(key)) {
+      historyCache.set(key, fetch(`/api/app?view=history&keyword=${encodeURIComponent(key)}`, {
+        credentials: 'same-origin', cache: 'no-store'
+      }).then(async response => {
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data) throw new Error(data?.error || '과거 이력을 읽지 못했습니다.');
+        return data;
+      }));
+    }
+    return historyCache.get(key);
+  }
+
+  async function renderHistory(node, keyword) {
+    node.replaceChildren();
+    if (!keyword) { node.textContent = '과거 이력: 근거 키워드 없음'; return; }
+    const data = await getHistory(keyword);
+    if (!data) { node.textContent = '과거 이력: 비공개 Vercel 화면에서 조회'; return; }
+    if (!data.count) { node.textContent = '과거 이력: 일치하는 요구 없음'; return; }
+    const title = document.createElement('strong');
+    title.textContent = `과거 이력 ${data.count}건 · 주로 ${data.mainDepartment || '미분류'}`;
+    const list = document.createElement('ul');
+    for (const row of data.recent) {
+      const li = document.createElement('li');
+      li.textContent = `${row.date} · ${row.text} · ${row.department}`;
+      list.append(li);
+    }
+    node.append(title, list);
   }
 
   function parseRows(rows, source) {
@@ -134,5 +207,5 @@
   }
 
   root.RequestCommon = { CSV_FIELDS, parseCsv, readCsvFile, readXlsxFile, exportXlsx,
-    readData, getCases, loadCases, request, register, confirm };
+    readData, getCases, loadCases, getHistory, renderHistory, request, register, confirm, isVercel };
 })(globalThis);

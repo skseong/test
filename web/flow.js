@@ -78,8 +78,10 @@
         if (!['배분확정', '회신중'].includes(item.status)) fail(409, '현재 상태에서는 재배정을 요청할 수 없습니다.');
         const reason = value(request.reason);
         if (!reason) fail(400, '재배정 요청 사유가 필요합니다.');
+        const suggestedDepartment = value(request.suggestedDepartment);
+        if (suggestedDepartment) validDepartment(suggestedDepartment, names);
         item.status = '재배정요청';
-        item.events.push({ type: '재배정요청', at, by: department, reason });
+        item.events.push({ type: '재배정요청', at, by: department, reason, suggestedDepartment });
       } else {
         if (!['배분확정', '회신중'].includes(item.status)) fail(409, '현재 상태에서는 회신할 수 없습니다.');
         const reply = pick(request.reply, ['ref', 'evidenceRef']);

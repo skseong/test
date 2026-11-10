@@ -12,7 +12,7 @@
     <nav aria-label="화면 이동">
       <a href="index.html">시작 화면</a>
       <a class="active" href="assign.html" aria-current="page">배분</a>
-      <a href="reply.html">현업 회신</a>
+      <a href="dept.html">현업 회신</a>
       <span class="disabled" title="S8에서 제공">취합 <em>S8</em></span>
     </nav>
   </header>
@@ -37,11 +37,11 @@
     </section>
     <section class="card" aria-labelledby="assign-title">
       <div class="section-head"><span class="step">02</span><div><h2 id="assign-title">문항 배분</h2><p>후보는 우선순위가 높은 순서입니다. 동순위나 무일치는 직접 판단하고 사유를 남겨 주세요.</p></div></div>
-      <div class="list-toolbar"><span id="list-count" class="count">0문항</span><div class="toolbar-actions"><label>상태 <select id="status-filter"><option value="all">전체</option><option value="접수">접수</option><option value="배분확정">배분확정</option></select></label><button id="export-xlsx" class="button" type="button">배분현황 엑셀 저장</button></div></div>
+      <div class="list-toolbar"><span id="list-count" class="count">0문항</span><div class="toolbar-actions"><label>상태 <select id="status-filter"><option value="all">전체</option><option value="접수">접수</option><option value="배분확정">배분확정</option><option value="재배정요청">재배정요청</option><option value="회신중">회신중</option><option value="회신완료">회신완료</option></select></label><button id="export-xlsx" class="button" type="button">배분현황 엑셀 저장</button></div></div>
       <div class="table-scroll"><table class="assignment-table"><thead><tr><th>상태</th><th>의원·문항</th><th>요구내용</th><th>후보 3순위</th><th>주관 과 · 협조 과</th><th>확정</th></tr></thead><tbody id="case-body"></tbody></table></div>
       <div id="empty" class="empty">등록된 문항이 없습니다. 위에서 PDF나 문항목록 CSV·엑셀을 선택해 주세요.</div>
     </section>
-    <p class="footnote">배분 규칙은 보강된 기준표 CSV를 읽습니다. 확정과 수정 이력은 비공개 Blob에 남습니다.</p>
+    <p class="footnote">배분 규칙은 보강된 기준표 CSV를 읽습니다. 확정과 수정 이력은 상단에 표시된 위치에 저장됩니다.</p>
   </main>
   <script src="lib/pdf.min.js"></script>
   <script src="lib/papaparse.min.js"></script>

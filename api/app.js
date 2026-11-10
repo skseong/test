@@ -1,5 +1,6 @@
 const { get, put, BlobPreconditionFailedError } = require('@vercel/blob');
 const { apply, FlowError } = require('../web/flow.js');
+const Papa = require('../web/lib/papaparse.min.js');
 const org = require('./org.json');
 
 const PATH = 'cases.json';
@@ -16,6 +17,14 @@ const storage = {
       access: 'private', token: token(), contentType: 'application/json',
       cacheControlMaxAge: 60, allowOverwrite: !!etag, ...(etag ? { ifMatch: etag } : {})
     });
+  },
+  async history() {
+    const blob = await get('접수대장.csv', { access: 'private', token: token(), useCache: false });
+    if (!blob) return [];
+    const csv = await new Response(blob.stream).text();
+    const parsed = Papa.parse(csv, { header: true, skipEmptyLines: true });
+    if (parsed.errors.length) throw new Error('접수대장 CSV 형식이 올바르지 않습니다.');
+    return parsed.data;
   }
 };
 
@@ -29,10 +38,30 @@ function send(res, status, body) {
   res.status(status).json(body);
 }
 
+function summarizeHistory(rows, keyword) {
+  const matched = rows.filter(row => String(row.요구내용 || '').includes(keyword));
+  const counts = new Map();
+  for (const row of matched) {
+    const name = String(row.배분과 || '').trim();
+    if (name) counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  const mainDepartment = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko'))[0]?.[0] || '';
+  const recent = matched.sort((a, b) =>
+    String(b.접수일 || '').localeCompare(String(a.접수일 || '')) ||
+    String(b.접수번호 || '').localeCompare(String(a.접수번호 || ''))).slice(0, 5)
+    .map(row => ({ date: row.접수일 || '', text: row.요구내용 || '', department: row.배분과 || '' }));
+  return { count: matched.length, mainDepartment, recent };
+}
+
 function createHandler(store = storage) {
   return async function handler(req, res) {
     try {
       if (req.method === 'GET') {
+        if (req.query?.view === 'history') {
+          const keyword = String(req.query.keyword || '').trim();
+          if (!keyword || keyword.length > 100) throw new FlowError(400, '근거 키워드를 확인해 주세요.');
+          return send(res, 200, summarizeHistory(await store.history(), keyword));
+        }
         const { db } = await store.read();
         return send(res, 200, db);
       }
@@ -63,3 +92,4 @@ function createHandler(store = storage) {
 
 module.exports = createHandler();
 module.exports.createHandler = createHandler;
+module.exports.summarizeHistory = summarizeHistory;

@@ -12,12 +12,13 @@
     <nav aria-label="화면 이동">
       <a class="active" href="index.html" aria-current="page">시작 화면</a>
       <a href="assign.html">배분</a>
-      <a href="reply.html">현업 회신</a>
+      <a href="dept.html">현업 회신</a>
       <span class="disabled" title="S8에서 제공">취합 <em>S8</em></span>
     </nav>
   </header>
   <main class="shell">
     <div class="eyebrow">START · 업무 현황</div>
+    <span class="storage-badge">● 저장 위치 확인 중</span>
     <section class="hero">
       <div>
         <h1>오늘의 요구자료 업무</h1>
@@ -26,7 +27,7 @@
       <a class="button primary" href="assign.html">접수 · 배분 시작 <span aria-hidden="true">→</span></a>
     </section>
     <section class="stats" aria-label="저장 현황">
-      <div class="stat"><span>전체 문항</span><strong id="total">0</strong><small>비공개 저장소</small></div>
+      <div class="stat"><span>전체 문항</span><strong id="total">0</strong><small id="storage-label">저장 위치 확인 중</small></div>
       <div class="stat"><span>접수</span><strong id="received">0</strong><small>배분 대기</small></div>
       <div class="stat"><span>배분확정</span><strong id="confirmed">0</strong><small>주관 과 지정 완료</small></div>
     </section>
@@ -37,11 +38,11 @@
     </section>
     <section class="card" aria-labelledby="chart-title">
       <h2 id="chart-title">과별 배분 현황</h2>
-      <p class="chart-note">비공개 저장소에서 확정한 문항의 주관 과별 건수입니다.</p>
+      <p id="chart-note" class="chart-note">확정한 문항의 주관 과별 건수입니다.</p>
       <p id="chart-empty" class="empty">배분확정 문항이 생기면 차트가 표시됩니다.</p>
       <div id="chart-wrap" class="chart-wrap" hidden><canvas id="department-chart" role="img" aria-label="과별 배분확정 문항 수 막대 차트"></canvas></div>
     </section>
-    <p class="footnote">문항과 변경 기록은 Vercel의 비공개 Blob에 저장됩니다. 파일을 선택하는 것만으로는 업로드되지 않으며, 접수 등록을 누르면 문항 텍스트가 저장됩니다.</p>
+    <p class="footnote">문항과 변경 기록은 위에 표시된 위치에 저장됩니다. 파일을 선택하는 것만으로는 저장되지 않으며, 접수 등록을 누르면 문항 텍스트가 저장됩니다.</p>
   </main>
   <script src="lib/papaparse.min.js"></script>
   <script src="lib/chart.umd.min.js"></script>

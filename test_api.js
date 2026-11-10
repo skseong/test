@@ -9,11 +9,16 @@ let document = { cases: [] };
 let writes = 0;
 const fakeStore = {
   async read() { return { db: structuredClone(document), etag: String(writes) }; },
-  async write(db) { document = structuredClone(db); writes++; }
+  async write(db) { document = structuredClone(db); writes++; },
+  async history() { return [
+    { 접수일: '2026-09-12', 접수번호: '2026-0001', 요구내용: '가상 안전 자료', 배분과: first },
+    { 접수일: '2026-09-13', 접수번호: '2026-0002', 요구내용: '가상 안전 현황', 배분과: first },
+    { 접수일: '2026-09-14', 접수번호: '2026-0003', 요구내용: '가상 안전 기준', 배분과: second }
+  ]; }
 };
 const handler = createHandler(fakeStore);
-async function call(method, body) {
-  const req = { method, body, headers: { 'content-length': String(JSON.stringify(body || {}).length) } };
+async function call(method, body, query) {
+  const req = { method, body, query, headers: { 'content-length': String(JSON.stringify(body || {}).length) } };
   const res = { headers: {}, setHeader(key, val) { this.headers[key] = val; },
     status(code) { this.code = code; return this; }, json(value) { this.body = value; return this; } };
   await handler(req, res);
@@ -25,6 +30,9 @@ async function call(method, body) {
   const check = (condition, label) => { assert.ok(condition, label); count++; console.log(`통과 ${count}: ${label}`); };
   let res = await call('GET');
   check(res.code === 200 && res.body.cases.length === 0, '빈 cases.json 전체 조회');
+  res = await call('GET', null, { view: 'history', keyword: '안전' });
+  check(res.code === 200 && res.body.count === 3 && res.body.mainDepartment === first &&
+    res.body.recent[0].date === '2026-09-14', '비공개 과거 이력 건수·주된 과·최근 순서');
 
   res = await call('POST', { action: '접수', receipt: {
     sourceRef: '가상 요구서', committee: '가상 위원회', member: '의원G',
@@ -58,8 +66,9 @@ async function call(method, body) {
   const secondId = res.body.created[0].caseId;
   await call('POST', { action: '배분', caseId: secondId, version: 1, lead: first, support: [], method: '규칙' });
   res = await call('POST', { action: '재배정요청', caseId: secondId, version: 2,
-    department: first, reason: '가상 소관 이의' });
-  check(res.code === 200 && res.body.status === '재배정요청', '담당 과 재배정요청');
+    department: first, reason: '가상 소관 이의', suggestedDepartment: second });
+  check(res.code === 200 && res.body.status === '재배정요청' &&
+    document.cases[1].events.at(-1).suggestedDepartment === second, '담당 과 재배정요청과 희망 과 기록');
   res = await call('POST', { action: '배분', caseId: secondId, version: 3, lead: second,
     support: [], method: '수정', reason: '가상 재확인' });
   check(res.code === 200 && document.cases[1].assignment.lead === second &&
