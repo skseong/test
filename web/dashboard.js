@@ -1,7 +1,7 @@
 (async function () {
   'use strict';
   try {
-    const cases = RequestCommon.getCases();
+    const cases = await RequestCommon.loadCases();
     const confirmed = cases.filter(item => item.status === '배분확정');
     document.getElementById('total').textContent = cases.length;
     document.getElementById('received').textContent = cases.filter(item => item.status === '접수').length;

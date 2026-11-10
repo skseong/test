@@ -12,7 +12,7 @@
     <nav aria-label="화면 이동">
       <a href="index.html">시작 화면</a>
       <a class="active" href="assign.html" aria-current="page">배분</a>
-      <span class="disabled" title="S6에서 제공">현업 회신 <em>S6</em></span>
+      <a href="reply.html">현업 회신</a>
       <span class="disabled" title="S8에서 제공">취합 <em>S8</em></span>
     </nav>
   </header>
@@ -20,7 +20,7 @@
     <div class="eyebrow">ASSIGN · 총괄 담당</div>
     <div class="page-head">
       <div><h1>접수 및 배분</h1><p>원문과 분해 결과를 확인한 뒤 등록하고, 기준표의 추천을 검토해 과를 확정하세요.</p></div>
-      <span class="storage-badge">● 이 브라우저에 저장</span>
+      <span class="storage-badge">● 비공개 Blob에 저장</span>
     </div>
     <section class="card" aria-labelledby="receive-title">
       <div class="section-head"><span class="step">01</span><div><h2 id="receive-title">요구서 접수</h2><p>PDF 또는 문항목록 CSV·엑셀 파일을 불러올 수 있습니다.</p></div></div>
@@ -41,7 +41,7 @@
       <div class="table-scroll"><table class="assignment-table"><thead><tr><th>상태</th><th>의원·문항</th><th>요구내용</th><th>후보 3순위</th><th>주관 과 · 협조 과</th><th>확정</th></tr></thead><tbody id="case-body"></tbody></table></div>
       <div id="empty" class="empty">등록된 문항이 없습니다. 위에서 PDF나 문항목록 CSV·엑셀을 선택해 주세요.</div>
     </section>
-    <p class="footnote">배분 규칙은 보강된 기준표 CSV를 읽습니다. 확정과 수정 이력은 이 브라우저에 남습니다.</p>
+    <p class="footnote">배분 규칙은 보강된 기준표 CSV를 읽습니다. 확정과 수정 이력은 비공개 Blob에 남습니다.</p>
   </main>
   <script src="lib/pdf.min.js"></script>
   <script src="lib/papaparse.min.js"></script>

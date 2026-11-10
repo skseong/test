@@ -110,14 +110,14 @@
       reason.setAttribute('aria-label', `${item.의원} ${item.문항번호}번 수정 또는 확인 사유`);
       const button = el('button', 'button primary row-action', item.status === '배분확정' ? '배분 수정' : '배분 확정');
       button.type = 'button';
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         const selectedSupport = [...support.querySelectorAll('input:checked')].map(input => input.value);
         const isRule = !tied && !!defaultLead && lead.value === defaultLead && selectedSupport.length === 0 && !item.assignment;
         const method = isRule ? '규칙' : '수정';
         if (!lead.value) { alert('주관 과를 선택해 주세요.'); return; }
         if (method === '수정' && !reason.value.trim()) { alert('수정·확인 사유를 입력해 주세요.'); reason.focus(); return; }
         try {
-          RequestCommon.confirm(item.id, lead.value, selectedSupport, method,
+          await RequestCommon.confirm(item.id, lead.value, selectedSupport, method,
             reason.value.trim() || '기준표 후보 확인', departments);
           renderCases();
           showMessage(`${item.의원} ${item.문항번호}번 문항의 배분을 저장했습니다.`, 'success');
@@ -176,14 +176,15 @@
       showMessage(`${count}문항의 배분현황 엑셀 파일을 저장했습니다.`, 'success');
     } catch (error) { showMessage(error.message, 'error'); }
   });
-  document.getElementById('register').addEventListener('click', () => {
+  document.getElementById('register').addEventListener('click', async () => {
     try {
-      const result = RequestCommon.register(preview);
+      const result = await RequestCommon.register(preview);
       preview = [];
       pdfInput.value = '';
       csvInput.value = '';
       xlsxInput.value = '';
       renderPreview();
+      await RequestCommon.loadCases();
       renderCases();
       showMessage(`${result.added}문항 접수 등록 완료${result.skipped ? ` · 중복 ${result.skipped}문항 건너뜀` : ''}`, 'success');
     } catch (error) { showMessage(error.message, 'error'); }
@@ -200,9 +201,10 @@
       const column = header.indexOf('과');
       departments = rows.map(row => row[column]).filter(Boolean);
       if (departments.length !== 26 || info.부서수 !== 26) throw new Error('조직도 26개 과를 확인하지 못했습니다.');
+      await RequestCommon.loadCases();
       renderCases();
     } catch (error) {
-      document.getElementById('empty').textContent = `자료를 읽지 못했습니다: ${error.message}. http://localhost:8000에서 열어 주세요.`;
+      document.getElementById('empty').textContent = `자료를 읽지 못했습니다: ${error.message}`;
       showMessage(error.message, 'error');
     }
   })();
