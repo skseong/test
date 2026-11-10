@@ -32,22 +32,21 @@
     </section>
     <section class="card next-card">
       <div class="step-icon">01</div>
-      <div><h2>접수와 배분</h2><p>PDF 여러 건 또는 문항목록 CSV를 읽어 접수합니다. 후보 3순위와 규칙 근거를 살펴보고 과를 확정하세요.</p></div>
+      <div><h2>접수와 배분</h2><p>PDF 여러 건 또는 문항목록 CSV·엑셀을 읽어 접수합니다. 후보 3순위와 규칙 근거를 살펴보고 과를 확정하세요.</p></div>
       <a class="text-link" href="assign.html">배분 화면 열기 →</a>
+    </section>
+    <section class="card" aria-labelledby="chart-title">
+      <h2 id="chart-title">과별 배분 현황</h2>
+      <p class="chart-note">이 브라우저에서 확정한 문항의 주관 과별 건수입니다.</p>
+      <p id="chart-empty" class="empty">배분확정 문항이 생기면 차트가 표시됩니다.</p>
+      <div id="chart-wrap" class="chart-wrap" hidden><canvas id="department-chart" role="img" aria-label="과별 배분확정 문항 수 막대 차트"></canvas></div>
     </section>
     <p class="footnote">자료와 변경 기록은 현재 이 브라우저의 localStorage에만 저장됩니다. 다른 브라우저나 기기와 동기화되지 않습니다.</p>
   </main>
+  <script src="lib/papaparse.min.js"></script>
+  <script src="lib/chart.umd.min.js"></script>
   <script src="engine.js"></script>
   <script src="common.js"></script>
-  <script>
-    try {
-      const cases = RequestCommon.getCases();
-      document.getElementById('total').textContent = cases.length;
-      document.getElementById('received').textContent = cases.filter(x => x.status === '접수').length;
-      document.getElementById('confirmed').textContent = cases.filter(x => x.status === '배분확정').length;
-    } catch (error) {
-      document.querySelector('.footnote').textContent = error.message;
-    }
-  </script>
+  <script src="dashboard.js"></script>
 </body>
 </html>

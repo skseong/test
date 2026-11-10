@@ -13,43 +13,16 @@
   let departments = null;
 
   function parseCsv(text) {
-    const rows = [];
-    let row = [];
-    let field = '';
-    let quoted = false;
-    const source = text.replace(/^\uFEFF/, '');
-
-    for (let i = 0; i < source.length; i++) {
-      const char = source[i];
-      if (quoted) {
-        if (char === '"' && source[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else if (char === '"') {
-          quoted = false;
-        } else {
-          field += char;
-        }
-      } else if (char === '"' && field === '') {
-        quoted = true;
-      } else if (char === ',') {
-        row.push(field);
-        field = '';
-      } else if (char === '\n') {
-        row.push(field.replace(/\r$/, ''));
-        if (row.some((value) => value !== '')) rows.push(row);
-        row = [];
-        field = '';
-      } else {
-        field += char;
-      }
+    const papa = typeof module !== 'undefined' && module.exports
+      ? require('./lib/papaparse.min.js') : root.Papa;
+    if (!papa) throw new Error('Papa Parse를 읽지 못했습니다.');
+    const result = papa.parse(text.replace(/^\uFEFF/, ''), {
+      delimiter: ',', skipEmptyLines: 'greedy', dynamicTyping: false
+    });
+    if (result.errors.length) {
+      throw new Error(`CSV ${result.errors[0].row + 1}행 읽기 오류: ${result.errors[0].message}`);
     }
-    if (quoted) throw new Error('CSV 따옴표가 닫히지 않았습니다.');
-    if (field !== '' || row.length > 0) {
-      row.push(field.replace(/\r$/, ''));
-      if (row.some((value) => value !== '')) rows.push(row);
-    }
-    return rows;
+    return result.data;
   }
 
   function records(text, required) {

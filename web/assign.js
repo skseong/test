@@ -2,6 +2,7 @@
   'use strict';
   const pdfInput = document.getElementById('pdf-files');
   const csvInput = document.getElementById('csv-file');
+  const xlsxInput = document.getElementById('xlsx-file');
   const message = document.getElementById('load-message');
   const previewWrap = document.getElementById('preview-wrap');
   const previewBody = document.getElementById('preview-body');
@@ -161,12 +162,27 @@
       showMessage(`CSV에서 ${preview.length}문항을 읽었습니다. 내용을 확인한 뒤 접수 등록하세요.`, 'success');
     } catch (error) { preview = []; renderPreview(); showMessage(error.message, 'error'); }
   });
+  xlsxInput.addEventListener('change', async () => {
+    if (!xlsxInput.files.length) return;
+    try {
+      preview = await RequestCommon.readXlsxFile(xlsxInput.files[0]);
+      renderPreview();
+      showMessage(`엑셀에서 ${preview.length}문항을 읽었습니다. 내용을 확인한 뒤 접수 등록하세요.`, 'success');
+    } catch (error) { preview = []; renderPreview(); showMessage(error.message, 'error'); }
+  });
+  document.getElementById('export-xlsx').addEventListener('click', () => {
+    try {
+      const count = RequestCommon.exportXlsx();
+      showMessage(`${count}문항의 배분현황 엑셀 파일을 저장했습니다.`, 'success');
+    } catch (error) { showMessage(error.message, 'error'); }
+  });
   document.getElementById('register').addEventListener('click', () => {
     try {
       const result = RequestCommon.register(preview);
       preview = [];
       pdfInput.value = '';
       csvInput.value = '';
+      xlsxInput.value = '';
       renderPreview();
       renderCases();
       showMessage(`${result.added}문항 접수 등록 완료${result.skipped ? ` · 중복 ${result.skipped}문항 건너뜀` : ''}`, 'success');

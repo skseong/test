@@ -23,10 +23,11 @@
       <span class="storage-badge">● 이 브라우저에 저장</span>
     </div>
     <section class="card" aria-labelledby="receive-title">
-      <div class="section-head"><span class="step">01</span><div><h2 id="receive-title">요구서 접수</h2><p>여러 PDF를 한 번에 선택하거나 문항목록.csv를 불러올 수 있습니다.</p></div></div>
+      <div class="section-head"><span class="step">01</span><div><h2 id="receive-title">요구서 접수</h2><p>PDF 또는 문항목록 CSV·엑셀 파일을 불러올 수 있습니다.</p></div></div>
       <div class="upload-grid">
         <label class="upload-box" for="pdf-files"><span class="upload-icon">PDF</span><strong>요구서 PDF 선택</strong><small>여러 파일 가능 · 파일은 서버로 전송되지 않습니다</small><input id="pdf-files" type="file" accept=".pdf,application/pdf" multiple></label>
         <label class="upload-box" for="csv-file"><span class="upload-icon csv">CSV</span><strong>문항목록.csv 선택</strong><small>split.py의 8열 형식 · UTF-8 CSV</small><input id="csv-file" type="file" accept=".csv,text/csv"></label>
+        <label class="upload-box" for="xlsx-file"><span class="upload-icon xlsx">XLSX</span><strong>문항목록.xlsx 선택</strong><small>첫 시트의 8열 형식 · 브라우저에서만 읽기</small><input id="xlsx-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
       </div>
       <p id="load-message" class="message" role="status">파일을 선택하면 분해 결과가 아래에 표시됩니다.</p>
       <div id="preview-wrap" hidden>
@@ -36,13 +37,15 @@
     </section>
     <section class="card" aria-labelledby="assign-title">
       <div class="section-head"><span class="step">02</span><div><h2 id="assign-title">문항 배분</h2><p>후보는 우선순위가 높은 순서입니다. 동순위나 무일치는 직접 판단하고 사유를 남겨 주세요.</p></div></div>
-      <div class="list-toolbar"><span id="list-count" class="count">0문항</span><label>상태 <select id="status-filter"><option value="all">전체</option><option value="접수">접수</option><option value="배분확정">배분확정</option></select></label></div>
+      <div class="list-toolbar"><span id="list-count" class="count">0문항</span><div class="toolbar-actions"><label>상태 <select id="status-filter"><option value="all">전체</option><option value="접수">접수</option><option value="배분확정">배분확정</option></select></label><button id="export-xlsx" class="button" type="button">배분현황 엑셀 저장</button></div></div>
       <div class="table-scroll"><table class="assignment-table"><thead><tr><th>상태</th><th>의원·문항</th><th>요구내용</th><th>후보 3순위</th><th>주관 과 · 협조 과</th><th>확정</th></tr></thead><tbody id="case-body"></tbody></table></div>
-      <div id="empty" class="empty">등록된 문항이 없습니다. 위에서 PDF나 문항목록 CSV를 선택해 주세요.</div>
+      <div id="empty" class="empty">등록된 문항이 없습니다. 위에서 PDF나 문항목록 CSV·엑셀을 선택해 주세요.</div>
     </section>
     <p class="footnote">배분 규칙은 보강된 기준표 CSV를 읽습니다. 확정과 수정 이력은 이 브라우저에 남습니다.</p>
   </main>
   <script src="lib/pdf.min.js"></script>
+  <script src="lib/papaparse.min.js"></script>
+  <script src="lib/xlsx.full.min.js"></script>
   <script src="engine.js"></script>
   <script src="common.js"></script>
   <script src="split.js"></script>

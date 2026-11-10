@@ -1,24 +1,53 @@
-/* 세 화면이 공유하는 문항 저장소와 CSV 읽기. 서버 도입 전까지 브라우저 안에만 저장한다. */
+/* 화면이 공유하는 문항 저장소와 파일 읽기. 자료는 브라우저 안에만 저장한다. */
 (function (root) {
   'use strict';
   const STORAGE_KEY = 'assembly-request-cases-v1';
   const CSV_FIELDS = ['파일명', '위원회', '의원', '제출기한', '문항번호', '요구내용', '세부항목', '비고'];
 
-  function parseCsv(text) {
-    const rows = RequestEngine.parseCsv(text);
-    if (!rows.length) throw new Error('CSV가 비어 있습니다.');
+  function parseRows(rows, source) {
+    if (!rows.length) throw new Error(`${source}가 비어 있습니다.`);
     const [header, ...body] = rows;
     for (const field of CSV_FIELDS) {
-      if (!header.includes(field)) throw new Error(`문항목록.csv에 "${field}" 열이 없습니다.`);
+      if (!header.includes(field)) throw new Error(`${source}에 "${field}" 열이 없습니다.`);
     }
     return body.map((cells, i) => {
-      if (cells.length !== header.length) throw new Error(`CSV ${i + 2}행의 열 수가 맞지 않습니다.`);
-      return Object.fromEntries(header.map((name, n) => [name, cells[n]]));
+      if (cells.length !== header.length) throw new Error(`${source} ${i + 2}행의 열 수가 맞지 않습니다.`);
+      return Object.fromEntries(header.map((name, n) => [name, String(cells[n] ?? '')]));
     });
+  }
+
+  function parseCsv(text) {
+    return parseRows(RequestEngine.parseCsv(text), 'CSV');
   }
 
   async function readCsvFile(file) {
     return parseCsv(await file.text());
+  }
+
+  async function readXlsxFile(file) {
+    if (!root.XLSX) throw new Error('SheetJS를 읽지 못했습니다.');
+    const book = root.XLSX.read(await file.arrayBuffer());
+    const sheet = book.Sheets[book.SheetNames[0]];
+    if (!sheet) throw new Error('엑셀 첫 시트가 비어 있습니다.');
+    const rows = root.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
+      .filter(row => row.some(cell => String(cell).trim() !== ''));
+    const width = rows[0]?.length || 0;
+    return parseRows(rows.map(row => Array.from({ length: width }, (_, i) => row[i] ?? '')), '엑셀');
+  }
+
+  function exportXlsx() {
+    if (!root.XLSX) throw new Error('SheetJS를 읽지 못했습니다.');
+    const fields = [...CSV_FIELDS, '상태', '주관 과', '협조 과', '확정방법', '확정일시'];
+    const rows = getCases().map(item => [
+      ...CSV_FIELDS.map(field => String(item[field] ?? '')),
+      item.status, item.assignment?.lead || '', (item.assignment?.support || []).join(', '),
+      item.assignment?.method || '', item.assignment?.confirmedAt || ''
+    ]);
+    const book = root.XLSX.utils.book_new();
+    const sheet = root.XLSX.utils.aoa_to_sheet([fields, ...rows]);
+    root.XLSX.utils.book_append_sheet(book, sheet, '배분현황');
+    root.XLSX.writeFile(book, '배분현황.xlsx');
+    return rows.length;
   }
 
   async function readData(name) {
@@ -88,5 +117,5 @@
     return item;
   }
 
-  root.RequestCommon = { CSV_FIELDS, parseCsv, readCsvFile, readData, getCases, register, confirm };
+  root.RequestCommon = { CSV_FIELDS, parseCsv, readCsvFile, readXlsxFile, exportXlsx, readData, getCases, register, confirm };
 })(globalThis);
