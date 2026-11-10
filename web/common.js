@@ -3,8 +3,21 @@
   'use strict';
   const CSV_FIELDS = ['파일명', '위원회', '의원', '제출기한', '문항번호', '요구내용', '세부항목', '비고'];
   let cases = [];
+  let rawDb = { cases: [] };
+  let orgPromise;
+
+  function loadOrg() {
+    if (!orgPromise) orgPromise = readData('A부_조직도_26개과.csv').then(csv => {
+      const [header, ...rows] = RequestEngine.parseCsv(csv);
+      return rows.map(row => ({ 과: row[header.indexOf('과')] })).filter(row => row.과);
+    });
+    return orgPromise;
+  }
 
   async function request(method, body) {
+    if (method === 'POST' && root.RequestFlow) {
+      root.RequestFlow.apply(rawDb, body, await loadOrg());
+    }
     const response = await fetch('/api/app', {
       method, credentials: 'same-origin', cache: 'no-store',
       headers: body ? { 'Content-Type': 'application/json' } : {},
@@ -16,7 +29,8 @@
   }
 
   async function loadCases() {
-    cases = (await request('GET')).cases.map(item => ({
+    rawDb = await request('GET');
+    cases = rawDb.cases.map(item => ({
       ...item, id: item.caseId,
       파일명: item.receipt.sourceRef, 위원회: item.receipt.committee,
       의원: item.receipt.member, 제출기한: item.receipt.dueAt,
