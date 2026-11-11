@@ -53,7 +53,57 @@ function summarizeHistory(rows, keyword) {
   return { count: matched.length, mainDepartment, recent };
 }
 
-function createHandler(store = storage) {
+async function recommendDepartments(requirement, callOpenAI) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY 환경변수를 설정해 주세요.');
+  const departments = org.map(row => row.과).filter(Boolean);
+  const response = await callOpenAI({
+    model: 'gpt-4o-mini', temperature: 0,
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'department_recommendations', strict: true,
+        schema: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            후보: { type: 'array', items: { type: 'object', additionalProperties: false,
+              properties: { 과: { type: 'string' }, 근거: { type: 'string' } }, required: ['과', '근거'] } },
+            해당없음: { type: 'boolean' }
+          }, required: ['후보', '해당없음']
+        }
+      }
+    },
+    messages: [
+      { role: 'system', content: `국회 자료요구 문항의 담당 과를 추천하세요. 주어진 조직도 과 목록에서만 최대 3개를 고르고, 각 과마다 근거를 한 문장으로 작성하세요. 합당한 과가 없으면 후보는 빈 배열, 해당없음은 true로 답하세요. 목록 외 과는 절대 만들지 마세요.\n과 목록: ${JSON.stringify(departments)}` },
+      { role: 'user', content: String(requirement).slice(0, 10000) }
+    ]
+  }, apiKey);
+  let parsed;
+  try { parsed = JSON.parse(response.choices?.[0]?.message?.content || ''); }
+  catch { throw new Error('OpenAI가 유효한 JSON 후보를 반환하지 않았습니다.'); }
+  const allowed = new Set(departments);
+  const seen = new Set();
+  const candidates = (Array.isArray(parsed.후보) ? parsed.후보 : []).filter(item => {
+    const name = String(item?.과 || '').trim();
+    if (!allowed.has(name) || seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  }).slice(0, 3).map(item => ({ 과: String(item.과).trim(), 근거: String(item.근거 || '').trim().slice(0, 500) }));
+  const none = parsed.해당없음 === true || candidates.length === 0;
+  return { 후보: none ? [] : candidates, 해당없음: none };
+}
+
+async function callOpenAI(payload, apiKey) {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error(`OpenAI 요청 실패 (${response.status}).`);
+  return response.json();
+}
+
+function createHandler(store = storage, ai = callOpenAI) {
   return async function handler(req, res) {
     try {
       if (req.method === 'GET') {
@@ -68,6 +118,18 @@ function createHandler(store = storage) {
       if (req.method !== 'POST') return send(res, 405, { error: '허용되지 않는 요청입니다.' });
       if (Number(req.headers['content-length'] || 0) > 1024 * 1024) {
         throw new FlowError(413, '요청 크기가 1MB를 넘습니다.');
+      }
+      if (req.body?.작업 === 'AI추천') {
+        const requirement = String(req.body.요구내용 || '').trim();
+        if (!requirement || requirement.length > 10000) throw new FlowError(400, '요구내용을 확인해 주세요.');
+        try {
+          const result = await recommendDepartments(requirement, ai);
+          return send(res, 200, result);
+        } catch (error) {
+          console.error('AI 추천 오류:', error.message);
+          return send(res, 500, { error: error.message.includes('OPENAI_API_KEY')
+            ? '서버 환경변수 OPENAI_API_KEY를 설정해 주세요.' : 'AI 추천에 실패했습니다. 잠시 후 다시 시도해 주세요.' });
+        }
       }
       for (let attempt = 0; attempt < 3; attempt++) {
         const { db, etag } = await store.read();
@@ -93,3 +155,4 @@ function createHandler(store = storage) {
 module.exports = createHandler();
 module.exports.createHandler = createHandler;
 module.exports.summarizeHistory = summarizeHistory;
+module.exports.recommendDepartments = recommendDepartments;

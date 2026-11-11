@@ -20,12 +20,13 @@
   async function request(method, body) {
     if (!isVercel) {
       if (method === 'GET') return readBrowserDb();
+      if (body?.작업 === 'AI추천') throw new Error('AI 추천은 Vercel 배포 화면에서 사용할 수 있습니다.');
       const changed = root.RequestFlow.apply(rawDb, body, await loadOrg());
       localStorage.setItem(LOCAL_KEY, JSON.stringify(changed.db));
       rawDb = changed.db;
       return changed.result;
     }
-    if (method === 'POST' && root.RequestFlow) root.RequestFlow.apply(rawDb, body, await loadOrg());
+    if (method === 'POST' && body.action && root.RequestFlow) root.RequestFlow.apply(rawDb, body, await loadOrg());
     const response = await fetch('/api/app', {
       method, credentials: 'same-origin', cache: 'no-store',
       headers: body ? { 'Content-Type': 'application/json' } : {},

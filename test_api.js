@@ -34,6 +34,43 @@ async function call(method, body, query) {
   check(res.code === 200 && res.body.count === 3 && res.body.mainDepartment === first &&
     res.body.recent[0].date === '2026-09-14', '비공개 과거 이력 건수·주된 과·최근 순서');
 
+  const previousKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = 'fake-test-key';
+  let fakePayload;
+  const aiHandler = createHandler(fakeStore, async (payload, key) => {
+    fakePayload = { payload, key };
+    return { choices: [{ message: { content: JSON.stringify({
+      후보: [first, second, third, '조직도 밖 부서'].map(과 => ({ 과, 근거: `${과} 업무와 요구내용이 일치합니다.` })),
+      해당없음: false
+    }) } }] };
+  });
+  res = await (async () => {
+    const req = { method: 'POST', body: { 작업: 'AI추천', 요구내용: '가상 안전 정책 자료' }, headers: {} };
+    const response = { headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.code = c; return this; }, json(v) { this.body = v; return this; } };
+    await aiHandler(req, response); return response;
+  })();
+  check(res.code === 200 && res.body.후보.length === 3 && !res.body.후보.some(x => x.과 === '조직도 밖 부서'), 'AI 후보를 조직도 안 최대 3개로 제한');
+  check(fakePayload.payload.model === 'gpt-4o-mini' && fakePayload.payload.temperature === 0 &&
+    fakePayload.payload.response_format.type === 'json_schema' && fakePayload.key === 'fake-test-key', 'Chat Completions 모델·온도·JSON 설정');
+
+  const noneHandler = createHandler(fakeStore, async () => ({ choices: [{ message: { content: JSON.stringify({ 후보: [], 해당없음: true }) } }] }));
+  res = await (async () => {
+    const req = { method: 'POST', body: { 작업: 'AI추천', 요구내용: '가상 문항' }, headers: {} };
+    const response = { headers: {}, setHeader() {}, status(c) { this.code = c; return this; }, json(v) { this.body = v; return this; } };
+    await noneHandler(req, response); return response;
+  })();
+  check(res.code === 200 && res.body.해당없음 && res.body.후보.length === 0, 'AI 해당없음 응답');
+
+  delete process.env.OPENAI_API_KEY;
+  const missingKeyHandler = createHandler(fakeStore, async () => { throw new Error('호출되면 안 됨'); });
+  res = await (async () => {
+    const req = { method: 'POST', body: { 작업: 'AI추천', 요구내용: '가상 문항' }, headers: {} };
+    const response = { headers: {}, setHeader() {}, status(c) { this.code = c; return this; }, json(v) { this.body = v; return this; } };
+    await missingKeyHandler(req, response); return response;
+  })();
+  if (previousKey !== undefined) process.env.OPENAI_API_KEY = previousKey;
+  check(res.code === 500 && res.body.error.includes('OPENAI_API_KEY'), '키 미설정 시 500 안내');
+
   res = await call('POST', { action: '접수', receipt: {
     sourceRef: '가상 요구서', committee: '가상 위원회', member: '의원G',
     contact: '저장 금지'

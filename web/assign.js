@@ -93,12 +93,44 @@
       }
       const candidateCell = el('td');
       if (!candidates.length) candidateCell.append(el('span', 'muted', '일치 규칙 없음'));
+      const aiDepartments = new Set();
       candidates.forEach((candidate, i) => {
         const row = el('span', 'candidate');
         row.append(el('b', '', `${i + 1}. ${candidate.과}`), el('small', '', ` · 우선순위 ${candidate.우선순위} · ${candidate.근거키워드}`));
         candidateCell.append(row);
       });
       if (tied || !candidates.length) candidateCell.append(el('div', 'warning', tied ? '동순위 · 확인필요' : '무일치 · 확인필요'));
+      if (!candidates.length) {
+        const aiButton = el('button', 'button', 'AI 추천');
+        aiButton.type = 'button';
+        aiButton.addEventListener('click', async () => {
+          aiButton.disabled = true;
+          try {
+            const result = await RequestCommon.request('POST', { 작업: 'AI추천', 요구내용: item.요구내용 });
+            for (const suggestion of result.후보 || []) {
+              const row = el('span', 'candidate ai-candidate');
+              row.append(el('b', '', `AI · ${suggestion.과}`), el('small', '', ` · ${suggestion.근거}`));
+              candidateCell.append(row);
+              aiDepartments.add(suggestion.과);
+            }
+            if (result.해당없음) candidateCell.append(el('div', 'warning', 'AI 추천 해당없음 · 직접 확인필요'));
+            if (result.후보?.length) {
+              const choice = el('select', 'row-select ai-choice');
+              choice.setAttribute('aria-label', 'AI 추천 과 선택');
+              const blank = el('option', '', 'AI 추천 과 선택'); blank.value = ''; choice.append(blank);
+              for (const suggestion of result.후보) {
+                const option = el('option', '', suggestion.과); option.value = suggestion.과; choice.append(option);
+              }
+              candidateCell.append(choice);
+              choice.addEventListener('change', () => { if (choice.value) lead.value = choice.value; });
+            }
+          } catch (error) {
+            showMessage(error.message, 'error');
+            aiButton.disabled = false;
+          }
+        });
+        candidateCell.append(aiButton);
+      }
       const historyCell = el('div', 'history-preview small muted', '과거 이력 조회 중…');
       candidateCell.append(historyCell);
       RequestCommon.renderHistory(historyCell, candidates[0]?.근거키워드).catch(error => {
@@ -124,7 +156,8 @@
       button.addEventListener('click', async () => {
         const selectedSupport = [...support.querySelectorAll('input:checked')].map(input => input.value);
         const isRule = !tied && !!defaultLead && lead.value === defaultLead && selectedSupport.length === 0 && !item.assignment;
-        const method = isRule ? '규칙' : '수정';
+        const isAi = aiDepartments.has(lead.value) && selectedSupport.length === 0 && !item.assignment;
+        const method = isRule ? '규칙' : isAi ? 'AI' : '수정';
         if (!lead.value) { alert('주관 과를 선택해 주세요.'); return; }
         if (method === '수정' && !reason.value.trim()) { alert('수정·확인 사유를 입력해 주세요.'); reason.focus(); return; }
         try {
