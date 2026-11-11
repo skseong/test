@@ -160,7 +160,7 @@ function createHandler(store = storage, ai = callOpenAI) {
           return send(res, 502, { error: 'AI 추천에 실패했습니다. Vercel 로그에서 OpenAI 오류를 확인해 주세요.' });
         }
       }
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 5; attempt++) {
         const { db, etag } = await store.read();
         const changed = apply(db, req.body, org);
         if (req.body.action === '접수' && changed.result.added === 0) return send(res, 200, changed.result);
@@ -168,7 +168,10 @@ function createHandler(store = storage, ai = callOpenAI) {
           await store.write(changed.db, etag);
           return send(res, 200, changed.result);
         } catch (error) {
-          if (error instanceof BlobPreconditionFailedError && attempt < 2) continue;
+          if (error instanceof BlobPreconditionFailedError && attempt < 4) {
+            await new Promise(resolve => setTimeout(resolve, 75 * (attempt + 1)));
+            continue;
+          }
           throw error;
         }
       }

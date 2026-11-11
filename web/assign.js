@@ -160,12 +160,13 @@
         const method = isRule ? '규칙' : isAi ? 'AI' : '수정';
         if (!lead.value) { alert('주관 과를 선택해 주세요.'); return; }
         if (method === '수정' && !reason.value.trim()) { alert('수정·확인 사유를 입력해 주세요.'); reason.focus(); return; }
+        button.disabled = true;
         try {
           await RequestCommon.confirm(item.id, lead.value, selectedSupport, method,
             reason.value.trim() || '기준표 후보 확인', departments);
           renderCases();
           showMessage(`${item.의원} ${item.문항번호}번 문항의 배분을 저장했습니다.`, 'success');
-        } catch (error) { showMessage(error.message, 'error'); }
+        } catch (error) { showMessage(error.message, 'error'); button.disabled = false; }
       });
       actionCell.append(button, reason);
       if (item.assignment) {
@@ -221,6 +222,8 @@
     } catch (error) { showMessage(error.message, 'error'); }
   });
   document.getElementById('register').addEventListener('click', async () => {
+    const registerButton = document.getElementById('register');
+    registerButton.disabled = true;
     try {
       const result = await RequestCommon.register(preview);
       preview = [];
@@ -232,6 +235,7 @@
       renderCases();
       showMessage(`${result.added}문항 접수 등록 완료${result.skipped ? ` · 중복 ${result.skipped}문항 건너뜀` : ''}`, 'success');
     } catch (error) { showMessage(error.message, 'error'); }
+    finally { registerButton.disabled = false; }
   });
   filter.addEventListener('change', renderCases);
   (async () => {

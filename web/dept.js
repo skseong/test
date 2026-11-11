@@ -63,11 +63,12 @@
         submit.addEventListener('click', async () => {
           try {
             if (!input.files.length && !noData.checked) throw new Error('회신 엑셀을 선택하거나 자료 없음을 표시해 주세요.');
+            submit.disabled = true;
             await RequestCommon.request('POST', { action: '회신', caseId: item.caseId,
               version: item.version, department: department.value,
               reply: { ref: ref.value.trim(), noData: noData.checked }, note: note.value });
             await render(); show('회신 참조를 저장했습니다. 엑셀 파일 내용은 전송하지 않았습니다.');
-          } catch (error) { show(error.message, true); }
+          } catch (error) { show(error.message, true); submit.disabled = false; }
         });
         const reason = document.createElement('input'); reason.placeholder = '재배정 요청 사유';
         reason.setAttribute('aria-label', `${item.문항번호}번 재배정 사유`);
@@ -81,11 +82,12 @@
         reassign.type = 'button';
         reassign.addEventListener('click', async () => {
           try {
+            reassign.disabled = true;
             await RequestCommon.request('POST', { action: '재배정요청', caseId: item.caseId,
               version: item.version, department: department.value,
               reason: reason.value, suggestedDepartment: desired.value });
             await render(); show('재배정 요청을 저장했습니다.');
-          } catch (error) { show(error.message, true); }
+          } catch (error) { show(error.message, true); reassign.disabled = false; }
         });
         card.append(fileLabel, fileState, ref, note, noDataLabel, submit, reason, desired, reassign);
       }
