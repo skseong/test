@@ -1,0 +1,40 @@
+# 인증 정보와 로컬 설정
+.env
+.env.*
+!.env.example
+node_modules/
+
+# 개인 정보·원문·업무 자료: 공개 저장소 및 Pages에서 제외
+/data/*
+!/data/A부_조직도_26개과.csv
+!/data/배분기준표_소관키워드_304건.csv
+!/data/rules_보강.csv
+!/data/시험_요구문항_40건.csv
+/web/data/*
+!/web/data/A부_조직도_26개과.csv
+!/web/data/rules_보강.csv
+/원문/
+/부서회신/
+/지침재료/
+/99_완성본_잠금/
+*.xlsx
+*.xls
+*.pdf
+*.hwp
+*.hwpx
+
+# 생성 결과와 로컬 상태
+/org.json
+/cases.json
+results/
+result/
+output/
+outputs/
+dist/
+build/
+*.log
+*.tmp
+*.bak
+__pycache__/
+*.py[cod]
+.DS_Store
