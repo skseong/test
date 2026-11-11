@@ -1,8 +1,8 @@
 /* 브라우저와 서버가 공유하는 문항 상태 규칙. 저장은 호출자가 담당한다. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.RequestFlow = factory();
-})(globalThis, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./validate.js'));
+  else root.RequestFlow = factory(root.RequestValidate);
+})(globalThis, function (validator) {
   'use strict';
   class FlowError extends Error {
     constructor(status, message) { super(message); this.status = status; }
@@ -48,11 +48,28 @@
       }
       return { db: next, result: { created, added: created.length, skipped: questions.length - created.length } };
     }
-    if (!['배분', '회신', '재배정요청'].includes(request.action)) fail(400, '지원하지 않는 작업입니다.');
+    if (!['배분', '회신', '재배정요청', '보완요청', '확정'].includes(request.action)) fail(400, '지원하지 않는 작업입니다.');
     const item = next.cases.find(row => row.caseId === request.caseId);
     if (!item) fail(404, '문항을 찾지 못했습니다.');
     if (item.version !== request.version) fail(409, '문항이 변경되었습니다. 새로고침해 주세요.');
     const at = now();
+    if (request.action === '확정') {
+      if (item.status !== '회신완료') fail(409, '모든 담당 과의 회신이 끝난 문항만 확인 완료할 수 있습니다.');
+      const assigned = [item.assignment?.lead, ...(item.assignment?.support || [])].filter(Boolean);
+      const latest = assigned.map(department => [...item.replies].reverse().find(reply =>
+        reply.department === department && reply.round === item.assignment.round));
+      if (!assigned.length || latest.some(reply => !reply)) fail(409, '현재 배분 차수의 과별 회신이 모두 필요합니다.');
+      const requiredCodes = [...new Set(latest.flatMap(reply => (reply.checks || []).map(check => check.code)))];
+      const reviewed = Array.isArray(request.reviewedCheckCodes) ? [...new Set(request.reviewedCheckCodes.map(value).filter(Boolean))] : [];
+      if (requiredCodes.some(code => !reviewed.includes(code))) fail(409, '확인필요 항목을 모두 검토한 뒤 확인 완료해 주세요.');
+      const comment = value(request.comment).slice(0, 2000);
+      if (!comment) fail(400, '확정 코멘트를 입력해 주세요.');
+      item.confirmation = { comment, at, by: '국회 총괄 담당', reviewedCheckCodes: requiredCodes };
+      item.status = '확정';
+      item.events.push({ type: '확인 완료', at, by: '국회 총괄 담당', comment, reviewedCheckCodes: requiredCodes });
+      item.version++;
+      return { db: next, result: resultOf(item) };
+    }
     if (request.action === '배분') {
       if (!['접수', '재배정요청', '배분확정'].includes(item.status)) fail(409, '현재 상태에서는 배분할 수 없습니다.');
       const lead = value(request.lead);
@@ -82,17 +99,45 @@
         if (suggestedDepartment) validDepartment(suggestedDepartment, names);
         item.status = '재배정요청';
         item.events.push({ type: '재배정요청', at, by: department, reason, suggestedDepartment });
+      } else if (request.action === '보완요청') {
+        if (!['회신중', '회신완료'].includes(item.status)) fail(409, '회신이 등록된 문항만 보완 요청할 수 있습니다.');
+        const reason = value(request.reason).slice(0, 2000);
+        if (!reason) fail(400, '보완 요청 사유가 필요합니다.');
+        const reply = [...item.replies].reverse().find(row => row.department === department && row.round === item.assignment.round);
+        if (!reply) fail(409, '보완 대상 과의 현재 회신이 없습니다.');
+        const checkCodes = Array.isArray(request.checkCodes) ? [...new Set(request.checkCodes.map(value).filter(Boolean).map(code => code.slice(0, 80)))] : [];
+        item.supplement = { department, reason, checkCodes, round: item.assignment.round, requestedAt: at, status: '요청중' };
+        item.status = '보완요청';
+        item.events.push({ type: '보완요청', at, by: '국회 총괄 담당', department, reason, checkCodes });
       } else {
-        if (!['배분확정', '회신중'].includes(item.status)) fail(409, '현재 상태에서는 회신할 수 없습니다.');
+        const supplementReply = item.status === '보완요청';
+        if (supplementReply) {
+          if (item.supplement?.status !== '요청중' || item.supplement.department !== department) fail(403, '보완 요청을 받은 과만 다시 회신할 수 있습니다.');
+        } else if (!['배분확정', '회신중'].includes(item.status)) fail(409, '현재 상태에서는 회신할 수 없습니다.');
         const reply = pick(request.reply, ['ref', 'evidenceRef']);
         reply.noData = request.reply?.noData === true;
         if (!reply.ref && !reply.noData) fail(400, '회신 자료 참조 또는 자료 없음 표시가 필요합니다.');
+        let table;
+        let checks = [];
+        if (request.reply?.table !== undefined) {
+          table = request.reply.table;
+          if (!Array.isArray(table) || table.length > 3000 || table.some(row => !Array.isArray(row) || row.length > 80)) {
+            fail(400, '회신 표는 3,000행·80열 이내여야 합니다.');
+          }
+          if (table.some(row => row.some(cell => !(cell == null || ['string', 'number', 'boolean'].includes(typeof cell)) ||
+              (typeof cell === 'number' && !Number.isFinite(cell)) || (typeof cell === 'string' && cell.length > 10000)))) {
+            fail(400, '회신 표 셀 값 형식을 확인해 주세요.');
+          }
+          if (JSON.stringify(table).length > 800000) fail(413, '회신 표 데이터가 너무 큽니다. 행을 나눠 저장해 주세요.');
+          if (validator) checks = validator.validate(table, item.question.text).issues.map(({ code, message, row, column }) => ({ code, message, row, column }));
+        }
         const round = item.assignment.round;
-        item.replies.push({ department, ...reply, note: value(request.note).slice(0, 1000), round, at });
+        item.replies.push({ department, ...reply, ...(table ? { table, checks } : {}), note: value(request.note).slice(0, 1000), round, at });
         const assigned = [item.assignment.lead, ...item.assignment.support];
         item.status = assigned.every(name => item.replies.some(row => row.round === round && row.department === name))
           ? '회신완료' : '회신중';
-        item.events.push({ type: '회신', at, by: department, after: { ...reply } });
+        if (supplementReply) item.supplement = { ...item.supplement, status: '완료', completedAt: at };
+        item.events.push({ type: supplementReply ? '보완회신' : '회신', at, by: department, after: { ...reply } });
       }
     }
     item.version++;

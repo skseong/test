@@ -15,6 +15,21 @@
     message.className = `message ${error ? 'error' : 'success'}`;
   };
 
+  function showChecks(container, issues) {
+    container.replaceChildren();
+    if (!issues.length) {
+      container.append(el('p', '자동 점검에서 확인필요 항목을 찾지 못했습니다.', 'validation-ok'));
+      return;
+    }
+    const list = document.createElement('ul');
+    list.className = 'validation-list';
+    for (const issue of issues) {
+      const row = el('li', `${issue.row ? `${issue.row}행 · ` : ''}${issue.column ? `${issue.column} · ` : ''}${issue.message}`);
+      list.append(row);
+    }
+    container.append(el('strong', `확인필요 ${issues.length}건`), list);
+  }
+
   async function render() {
     const cases = await RequestCommon.loadCases();
     items.replaceChildren();
@@ -26,6 +41,10 @@
       const card = el('article', '', 'dept-card');
       card.append(el('h2', `${item.의원} · ${item.문항번호}번`), el('p', item.요구내용),
         el('p', `상태: ${item.status} · 역할: ${item.assignment.lead === department.value ? '주관' : '협조'} · 제출기한: ${item.제출기한 || '미지정'}`, 'small muted'));
+      const isSupplementTarget = item.status === '보완요청' && item.supplement?.department === department.value;
+      if (item.status === '보완요청') {
+        card.append(el('p', isSupplementTarget ? `보완 요청: ${item.supplement.reason}` : '다른 과의 보완 회신을 기다리는 중입니다.', isSupplementTarget ? 'warning' : 'small muted'));
+      }
       const prior = [...(item.replies || [])].reverse().find(value => value.department === department.value && value.round === item.assignment.round);
       if (prior) card.append(el('p', `현재 회신: ${prior.noData ? '자료 없음' : prior.ref}`, 'small'));
       const history = el('div', '과거 이력 조회 중…', 'small muted');
@@ -35,24 +54,30 @@
         history.textContent = '과거 이력을 읽지 못했습니다.';
       });
 
-      if (['배분확정', '회신중'].includes(item.status)) {
+      const canReply = ['배분확정', '회신중'].includes(item.status) || isSupplementTarget;
+      if (canReply) {
         const input = document.createElement('input');
         input.type = 'file'; input.accept = '.xlsx,.xls';
         input.setAttribute('aria-label', `${item.문항번호}번 회신 엑셀 올리기`);
         const fileLabel = el('label', '회신 엑셀 올리기', 'button'); fileLabel.append(input);
         const fileState = el('span', '선택한 파일 없음', 'small muted');
+        const checksBox = el('div', '', 'validation-panel');
+        let selected = null;
         input.addEventListener('change', async () => {
           try {
             const file = input.files[0];
-            if (!file) { fileState.textContent = '선택한 파일 없음'; return; }
-            const book = XLSX.read(await file.arrayBuffer());
-            const sheet = book.Sheets[book.SheetNames[0]];
-            const rows = sheet ? XLSX.utils.sheet_to_json(sheet, { header: 1 }) : [];
-            if (!rows.length) throw new Error('엑셀 첫 시트가 비어 있습니다.');
-            fileState.textContent = `${file.name} · ${rows.length}행 확인 · 파일 내용은 전송되지 않음`;
-          } catch (error) { input.value = ''; show(error.message, true); }
+            if (!file) { selected = null; fileState.textContent = '선택한 파일 없음'; checksBox.replaceChildren(); return; }
+            if (file.size > 8 * 1024 * 1024) throw new Error('엑셀 파일은 8MB 이하로 선택해 주세요.');
+            const rows = RequestValidate.readXlsx(await file.arrayBuffer(), XLSX);
+            const result = RequestValidate.validate(rows, item.요구내용);
+            selected = { name: file.name, rows, issues: result.issues };
+            fileState.textContent = `${file.name} · ${rows.length}행 · 원본 셀 값은 수정하지 않습니다.`;
+            showChecks(checksBox, selected.issues);
+          } catch (error) {
+            selected = null; input.value = ''; checksBox.replaceChildren(); show(error.message, true);
+          }
         });
-        const ref = document.createElement('input'); ref.placeholder = '내부 자료 참조값';
+        const ref = document.createElement('input'); ref.placeholder = '내부 자료 참조값 (선택)';
         ref.setAttribute('aria-label', `${item.문항번호}번 내부 자료 참조값`);
         const note = document.createElement('input'); note.placeholder = '메모';
         note.setAttribute('aria-label', `${item.문항번호}번 회신 메모`);
@@ -62,14 +87,24 @@
         submit.type = 'button';
         submit.addEventListener('click', async () => {
           try {
-            if (!input.files.length && !noData.checked) throw new Error('회신 엑셀을 선택하거나 자료 없음을 표시해 주세요.');
+            if (!selected && !noData.checked) throw new Error('회신 엑셀을 선택하거나 자료 없음을 표시해 주세요.');
+            if (selected?.issues.length && !window.confirm(`자동 점검에서 확인필요 ${selected.issues.length}건을 찾았습니다. 확인 내용을 검토했으며 원본 값을 그대로 제출할까요?`)) return;
             submit.disabled = true;
-            await RequestCommon.request('POST', { action: '회신', caseId: item.caseId,
-              version: item.version, department: department.value,
-              reply: { ref: ref.value.trim(), noData: noData.checked }, note: note.value });
-            await render(); show('회신 참조를 저장했습니다. 엑셀 파일 내용은 전송하지 않았습니다.');
+            const reply = { ref: ref.value.trim() || selected?.name || '', noData: noData.checked };
+            if (selected) reply.table = selected.rows;
+            const payload = { action: '회신', caseId: item.caseId, version: item.version,
+              department: department.value, reply, note: note.value };
+            if (new TextEncoder().encode(JSON.stringify(payload)).length > 900 * 1024) {
+              throw new Error('회신 표가 너무 커서 저장할 수 없습니다. 열·행을 줄인 사본으로 다시 제출해 주세요.');
+            }
+            await RequestCommon.request('POST', payload);
+            await render(); show('회신과 원본 셀 값, 점검 결과를 저장했습니다.');
           } catch (error) { show(error.message, true); submit.disabled = false; }
         });
+        card.append(fileLabel, fileState, checksBox, ref, note, noDataLabel, submit);
+      }
+
+      if (['배분확정', '회신중'].includes(item.status)) {
         const reason = document.createElement('input'); reason.placeholder = '재배정 요청 사유';
         reason.setAttribute('aria-label', `${item.문항번호}번 재배정 사유`);
         const desired = el('select', '', 'row-select');
@@ -89,7 +124,7 @@
             await render(); show('재배정 요청을 저장했습니다.');
           } catch (error) { show(error.message, true); reassign.disabled = false; }
         });
-        card.append(fileLabel, fileState, ref, note, noDataLabel, submit, reason, desired, reassign);
+        card.append(reason, desired, reassign);
       }
       items.append(card);
     }

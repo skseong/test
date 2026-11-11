@@ -164,8 +164,13 @@
         try {
           await RequestCommon.confirm(item.id, lead.value, selectedSupport, method,
             reason.value.trim() || '기준표 후보 확인', departments);
+          const pending = RequestCommon.getCases().filter(value => ['접수', '재배정요청'].includes(value.status));
+          filter.value = pending.some(value => value.status === '접수') ? '접수' :
+            pending.length ? '재배정요청' : 'all';
           renderCases();
-          showMessage(`${item.의원} ${item.문항번호}번 문항의 배분을 저장했습니다.`, 'success');
+          const next = caseBody.querySelector('.row-action:not(:disabled)');
+          if (next) { next.focus(); next.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+          showMessage(`${item.의원} ${item.문항번호}번 배분을 저장했습니다.${pending.length ? ` 다음 배분 대기 ${pending.length}건으로 이동했습니다.` : ' 배분 대기 문항이 더 없습니다.'}`, 'success');
         } catch (error) { showMessage(error.message, 'error'); button.disabled = false; }
       });
       actionCell.append(button, reason);

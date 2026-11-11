@@ -8,9 +8,19 @@ const second = org[1].과;
 const third = org[2].과;
 let document = { cases: [] };
 let writes = 0;
+let etagVersion = 0;
 const fakeStore = {
-  async read() { return { db: structuredClone(document), etag: String(writes) }; },
-  async write(db) { document = structuredClone(db); writes++; },
+  async read() { return { db: structuredClone(document), etag: String(etagVersion) }; },
+  async write(db, etag) {
+    if (etag !== String(etagVersion)) {
+      const error = new Error('fake ETag conflict');
+      Object.setPrototypeOf(error, BlobPreconditionFailedError.prototype);
+      throw error;
+    }
+    if (JSON.stringify(document.cases) !== JSON.stringify(db.cases)) writes++;
+    document = structuredClone(db); etagVersion++;
+    return { etag: String(etagVersion) };
+  },
   async history() { return [
     { 접수일: '2026-09-12', 접수번호: '2026-0001', 요구내용: '가상 안전 자료', 배분과: first },
     { 접수일: '2026-09-13', 접수번호: '2026-0002', 요구내용: '가상 안전 현황', 배분과: first },
@@ -140,6 +150,7 @@ async function call(method, body, query, targetHandler = handler) {
         throw error;
       }
       conflictDocument = structuredClone(db);
+      return { etag: String(conflictReads) };
     }
   };
   const conflictHandler = createHandler(conflictStore);
@@ -147,5 +158,36 @@ async function call(method, body, query, targetHandler = handler) {
     questions: [{ number: '1', text: '가상 동시 자료' }] }, null, conflictHandler);
   check(res.code === 200 && res.body.added === 1 && conflictDocument.cases.length === 1,
     'Blob ETag 충돌 뒤 다시 읽고 접수를 안전하게 재시도');
+
+  let raceDb = { cases: [] };
+  let raceEtag = 0;
+  const raceStore = {
+    async read() { return { db: structuredClone(raceDb), etag: String(raceEtag) }; },
+    async write(db, etag) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      if (etag !== String(raceEtag)) {
+        const error = new Error('fake concurrent ETag conflict');
+        Object.setPrototypeOf(error, BlobPreconditionFailedError.prototype);
+        throw error;
+      }
+      raceDb = structuredClone(db); raceEtag++;
+      return { etag: String(raceEtag) };
+    }
+  };
+  const raceHandler = createHandler(raceStore);
+  const [raceA, raceB] = await Promise.all([
+    call('POST', { action: '접수', receipt: { sourceRef: '가상 동시 A', member: '의원I' },
+      questions: [{ number: '1', text: '가상 동시 문항 A' }] }, null, raceHandler),
+    call('POST', { action: '접수', receipt: { sourceRef: '가상 동시 B', member: '의원J' },
+      questions: [{ number: '1', text: '가상 동시 문항 B' }] }, null, raceHandler)
+  ]);
+  check(raceA.code === 200 && raceB.code === 200 && raceDb.cases.length === 2,
+    '동시에 접수해도 쓰기 잠금으로 두 문항 모두 보존');
+  const burst = await Promise.all(Array.from({ length: 20 }, (_, index) => call('POST', {
+    action: '접수', receipt: { sourceRef: `가상 집중 접수 ${index}`, member: `의원${index}` },
+    questions: [{ number: '1', text: `가상 집중 문항 ${index}` }]
+  }, null, raceHandler)));
+  check(burst.every(response => response.code === 200) && raceDb.cases.length === 22,
+    '동시 20건 접수도 잠금 대기 뒤 모두 보존');
   console.log(`결과: ${count}개 항목 모두 통과, 가짜 저장소 ${writes}회 기록, 실제 Blob 쓰기 0회`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

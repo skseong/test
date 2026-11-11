@@ -26,7 +26,8 @@
       rawDb = changed.db;
       return changed.result;
     }
-    if (method === 'POST' && body.action && root.RequestFlow) root.RequestFlow.apply(rawDb, body, await loadOrg());
+    // Vercel 서버가 최신 cases.json에 대해 상태·버전을 다시 검증한다.
+    // 브라우저의 오래된 스냅샷으로 먼저 거부하지 않는다.
     const response = await fetch('/api/app', {
       method, credentials: 'same-origin', cache: 'no-store',
       headers: body ? { 'Content-Type': 'application/json' } : {},
