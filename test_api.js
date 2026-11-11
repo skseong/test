@@ -159,6 +159,26 @@ async function call(method, body, query, targetHandler = handler) {
   check(res.code === 200 && res.body.added === 1 && conflictDocument.cases.length === 1,
     'Blob ETag 충돌 뒤 다시 읽고 접수를 안전하게 재시도');
 
+  let staleVersion = 0;
+  let staleDocument = { cases: [], _writeLock: { owner: '가상 중단 요청', expiresAt: Date.now() - 1 } };
+  const staleLockStore = {
+    async read() { return { db: structuredClone(staleDocument), etag: String(staleVersion) }; },
+    async write(db, etag) {
+      if (etag !== String(staleVersion)) {
+        const error = new Error('fake stale-lock ETag conflict');
+        Object.setPrototypeOf(error, BlobPreconditionFailedError.prototype);
+        throw error;
+      }
+      staleDocument = structuredClone(db); staleVersion++;
+      return { etag: String(staleVersion) };
+    }
+  };
+  const staleLockHandler = createHandler(staleLockStore);
+  res = await call('POST', { action: '접수', receipt: { sourceRef: '가상 만료 잠금', member: '의원K' },
+    questions: [{ number: '1', text: '가상 잠금 복구 문항' }] }, null, staleLockHandler);
+  check(res.code === 200 && staleDocument.cases.length === 1 && !staleDocument._writeLock,
+    '중단된 요청의 만료 잠금을 넘겨받아 저장');
+
   let raceDb = { cases: [] };
   let raceEtag = 0;
   const raceStore = {

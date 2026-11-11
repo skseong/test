@@ -7,7 +7,7 @@ const org = require('./org.json');
 const PATH = 'cases.json';
 const WRITE_LOCK_KEY = '_writeLock';
 const WRITE_LOCK_LEASE_MS = 25000;
-const WRITE_LOCK_WAIT_MS = 18000;
+const WRITE_LOCK_WAIT_MS = 30000;
 class OpenAIRequestError extends Error {
   constructor(status, code, type) {
     super(`OpenAI HTTP ${status}`);
