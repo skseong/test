@@ -1,13 +1,9 @@
-const { get, put, BlobPreconditionFailedError } = require('@vercel/blob');
-const { randomUUID } = require('node:crypto');
+const { get, put } = require('@vercel/blob');
 const { apply, FlowError } = require('../web/flow.js');
 const Papa = require('../web/lib/papaparse.min.js');
 const org = require('./org.json');
 
 const PATH = 'cases.json';
-const WRITE_LOCK_KEY = '_writeLock';
-const WRITE_LOCK_LEASE_MS = 25000;
-const WRITE_LOCK_WAIT_MS = 30000;
 class OpenAIRequestError extends Error {
   constructor(status, code, type) {
     super(`OpenAI HTTP ${status}`);
@@ -19,15 +15,15 @@ class OpenAIRequestError extends Error {
 const storage = {
   async read() {
     const blob = await get(PATH, { access: 'private', token: token(), useCache: false });
-    if (!blob) return { db: { cases: [] }, etag: null };
+    if (!blob) return { db: { cases: [] } };
     const db = await new Response(blob.stream).json();
     if (!db || !Array.isArray(db.cases)) throw new Error('cases.json 형식이 올바르지 않습니다.');
-    return { db, etag: blob.blob.etag };
+    return { db };
   },
-  async write(db, etag) {
+  async write(db) {
     return put(PATH, JSON.stringify(db), {
       access: 'private', token: token(), contentType: 'application/json',
-      cacheControlMaxAge: 60, allowOverwrite: !!etag, ...(etag ? { ifMatch: etag } : {})
+      cacheControlMaxAge: 60, allowOverwrite: true
     });
   },
   async history() {
@@ -50,64 +46,11 @@ function send(res, status, body) {
   res.status(status).json(body);
 }
 
-function isBlobConflict(error) {
-  return error instanceof BlobPreconditionFailedError ||
-    error?.name === 'BlobAlreadyExistsError' || error?.status === 412;
-}
-function conflictError() {
-  const error = new Error('cases.json 저장 충돌');
-  Object.setPrototypeOf(error, BlobPreconditionFailedError.prototype);
-  return error;
-}
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-async function acquireWriteLock(store, owner) {
-  const deadline = Date.now() + WRITE_LOCK_WAIT_MS;
-  let attempt = 0;
-  while (Date.now() < deadline) {
-    const { db, etag } = await store.read();
-    const lock = db[WRITE_LOCK_KEY];
-    if (lock && lock.owner !== owner && lock.expiresAt > Date.now()) {
-      await delay(100 + Math.floor(Math.random() * 125));
-      continue;
-    }
-    try {
-      const lockedDb = { ...db, [WRITE_LOCK_KEY]: { owner, expiresAt: Date.now() + WRITE_LOCK_LEASE_MS } };
-      const saved = await store.write(lockedDb, etag);
-      return { db: lockedDb, etag: saved?.etag };
-    } catch (error) {
-      if (!isBlobConflict(error)) throw error;
-      await delay(Math.min(600, 50 * (2 ** Math.min(attempt++, 4))) + Math.floor(Math.random() * 125));
-    }
-  }
-  throw conflictError();
-}
-
-async function releaseWriteLock(store, owner) {
-  const { db, etag } = await store.read();
-  if (db[WRITE_LOCK_KEY]?.owner !== owner) return;
-  const cleanDb = { cases: db.cases };
-  await store.write(cleanDb, etag);
-}
-
 async function updateCases(store, body) {
-  const owner = randomUUID();
-  let locked = await acquireWriteLock(store, owner);
-  let committed = false;
-  try {
-    if (!locked.etag) locked = await store.read();
-    const { db, etag } = locked;
-    if (db[WRITE_LOCK_KEY]?.owner !== owner) throw conflictError();
-    const changed = apply(db, body, org);
-    await store.write({ cases: changed.db.cases }, etag);
-    committed = true;
-    return changed.result;
-  } finally {
-    if (!committed) {
-      try { await releaseWriteLock(store, owner); }
-      catch (error) { console.warn('cases.json 쓰기 잠금 해제가 지연될 수 있습니다.', { name: error?.name || 'Error' }); }
-    }
-  }
+  const { db } = await store.read();
+  const changed = apply(db, body, org);
+  await store.write({ cases: changed.db.cases });
+  return changed.result;
 }
 
 function summarizeHistory(rows, keyword) {
@@ -228,12 +171,6 @@ function createHandler(store = storage, ai = callOpenAI) {
       return send(res, 200, result);
     } catch (error) {
       if (error instanceof FlowError) return send(res, error.status, { error: error.message });
-      if (error instanceof BlobPreconditionFailedError) {
-        console.warn('cases.json 쓰기 잠금 대기 시간 초과', {
-          action: req.body?.action || 'unknown', waitMs: WRITE_LOCK_WAIT_MS
-        });
-        return send(res, 409, { error: '동시 변경이 발생했습니다. 다시 시도해 주세요.' });
-      }
       console.error('문항 API 오류:', error);
       return send(res, 500, { error: '서버 저장소를 확인해 주세요.' });
     }
