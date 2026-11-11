@@ -185,9 +185,14 @@
     }
     const result = { added: 0, skipped: 0 };
     for (const batch of batches.values()) {
-      const saved = await request('POST', batch);
-      result.added += saved.added;
-      result.skipped += saved.skipped;
+      for (let offset = 0; offset < batch.questions.length; offset += 100) {
+        const saved = await request('POST', {
+          ...batch,
+          questions: batch.questions.slice(offset, offset + 100)
+        });
+        result.added += saved.added;
+        result.skipped += saved.skipped;
+      }
     }
     await loadCases();
     return result;
