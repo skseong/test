@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { createHandler } = require('./api/app.js');
+const { createHandler, OpenAIRequestError } = require('./api/app.js');
 const org = require('./api/org.json');
 
 const first = org[0].과;
@@ -70,6 +70,20 @@ async function call(method, body, query) {
   })();
   if (previousKey !== undefined) process.env.OPENAI_API_KEY = previousKey;
   check(res.code === 500 && res.body.error.includes('OPENAI_API_KEY'), '키 미설정 시 500 안내');
+
+  process.env.OPENAI_API_KEY = 'fake-test-key';
+  for (const [error, expected, label] of [
+    [new OpenAIRequestError(429, 'insufficient_quota', 'insufficient_quota'), '사용량 한도 또는 결제', '429 한도 초과 안내'],
+    [new OpenAIRequestError(429, 'rate_limit_exceeded', 'requests'), '잠시 후 다시 시도', '429 요청 제한 안내']
+  ]) {
+    const errorHandler = createHandler(fakeStore, async () => { throw error; });
+    res = await (async () => {
+      const req = { method: 'POST', body: { 작업: 'AI추천', 요구내용: '가상 문항' }, headers: {} };
+      const response = { headers: {}, setHeader() {}, status(c) { this.code = c; return this; }, json(v) { this.body = v; return this; } };
+      await errorHandler(req, response); return response;
+    })();
+    check(res.code === 429 && res.body.error.includes(expected), label);
+  }
 
   res = await call('POST', { action: '접수', receipt: {
     sourceRef: '가상 요구서', committee: '가상 위원회', member: '의원G',

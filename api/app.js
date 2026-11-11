@@ -4,6 +4,14 @@ const Papa = require('../web/lib/papaparse.min.js');
 const org = require('./org.json');
 
 const PATH = 'cases.json';
+class OpenAIRequestError extends Error {
+  constructor(status, code, type) {
+    super(`OpenAI HTTP ${status}`);
+    this.status = status;
+    this.code = code || '';
+    this.type = type || '';
+  }
+}
 const storage = {
   async read() {
     const blob = await get(PATH, { access: 'private', token: token(), useCache: false });
@@ -99,8 +107,22 @@ async function callOpenAI(payload, apiKey) {
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
-  if (!response.ok) throw new Error(`OpenAI 요청 실패 (${response.status}).`);
+  if (!response.ok) {
+    let details = {};
+    try { details = (await response.json()).error || {}; } catch {}
+    throw new OpenAIRequestError(response.status, details.code, details.type);
+  }
   return response.json();
+}
+
+function openAIErrorMessage(error) {
+  if (error.code === 'insufficient_quota' || error.type === 'insufficient_quota') {
+    return 'OpenAI API 사용량 한도 또는 결제 설정을 확인해 주세요.';
+  }
+  if (error.status === 429) return 'OpenAI 요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.';
+  if (error.status === 401) return 'OPENAI_API_KEY가 유효한지 확인해 주세요. Vercel 환경변수 값을 점검하고 다시 배포하세요.';
+  if (error.status === 403) return 'OpenAI 프로젝트의 모델 접근 권한을 확인해 주세요.';
+  return 'AI 추천에 실패했습니다. Vercel 로그에서 OpenAI 오류를 확인해 주세요.';
 }
 
 function createHandler(store = storage, ai = callOpenAI) {
@@ -126,9 +148,16 @@ function createHandler(store = storage, ai = callOpenAI) {
           const result = await recommendDepartments(requirement, ai);
           return send(res, 200, result);
         } catch (error) {
+          if (error.message.includes('OPENAI_API_KEY')) {
+            console.error('AI 추천 오류: OPENAI_API_KEY 환경변수가 없습니다.');
+            return send(res, 500, { error: '서버 환경변수 OPENAI_API_KEY를 설정해 주세요.' });
+          }
+          if (error instanceof OpenAIRequestError) {
+            console.error('AI 추천 OpenAI 응답:', { status: error.status, code: error.code, type: error.type });
+            return send(res, error.status === 429 ? 429 : 502, { error: openAIErrorMessage(error) });
+          }
           console.error('AI 추천 오류:', error.message);
-          return send(res, 500, { error: error.message.includes('OPENAI_API_KEY')
-            ? '서버 환경변수 OPENAI_API_KEY를 설정해 주세요.' : 'AI 추천에 실패했습니다. 잠시 후 다시 시도해 주세요.' });
+          return send(res, 502, { error: 'AI 추천에 실패했습니다. Vercel 로그에서 OpenAI 오류를 확인해 주세요.' });
         }
       }
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -156,3 +185,4 @@ module.exports = createHandler();
 module.exports.createHandler = createHandler;
 module.exports.summarizeHistory = summarizeHistory;
 module.exports.recommendDepartments = recommendDepartments;
+module.exports.OpenAIRequestError = OpenAIRequestError;
