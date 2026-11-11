@@ -177,7 +177,7 @@ async function call(method, body, query, targetHandler = handler) {
   res = await call('POST', { action: '접수', receipt: { sourceRef: '가상 만료 잠금', member: '의원K' },
     questions: [{ number: '1', text: '가상 잠금 복구 문항' }] }, null, staleLockHandler);
   check(res.code === 200 && staleDocument.cases.length === 1 && !staleDocument._writeLock,
-    '중단된 요청의 만료 잠금을 넘겨받아 저장');
+    '이전 잠금 메타데이터가 있어도 저장 후 제거');
 
   let raceDb = { cases: [] };
   let raceEtag = 0;
@@ -202,12 +202,12 @@ async function call(method, body, query, targetHandler = handler) {
       questions: [{ number: '1', text: '가상 동시 문항 B' }] }, null, raceHandler)
   ]);
   check(raceA.code === 200 && raceB.code === 200 && raceDb.cases.length === 2,
-    '동시에 접수해도 쓰기 잠금으로 두 문항 모두 보존');
+    '동시 접수 시 ETag 재시도로 두 문항 모두 보존');
   const burst = await Promise.all(Array.from({ length: 20 }, (_, index) => call('POST', {
     action: '접수', receipt: { sourceRef: `가상 집중 접수 ${index}`, member: `의원${index}` },
     questions: [{ number: '1', text: `가상 집중 문항 ${index}` }]
   }, null, raceHandler)));
   check(burst.every(response => response.code === 200) && raceDb.cases.length === 22,
-    '동시 20건 접수도 잠금 대기 뒤 모두 보존');
+    '동시 20건 접수도 제한된 ETag 재시도로 모두 보존');
   console.log(`결과: ${count}개 항목 모두 통과, 가짜 저장소 ${writes}회 기록, 실제 Blob 쓰기 0회`);
 })().catch(error => { console.error(error); process.exitCode = 1; });
