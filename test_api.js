@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { createHandler, OpenAIRequestError } = require('./api/app.js');
+const { BlobPreconditionFailedError } = require('@vercel/blob');
 const org = require('./api/org.json');
 
 const first = org[0].과;
@@ -17,11 +18,11 @@ const fakeStore = {
   ]; }
 };
 const handler = createHandler(fakeStore);
-async function call(method, body, query) {
+async function call(method, body, query, targetHandler = handler) {
   const req = { method, body, query, headers: { 'content-length': String(JSON.stringify(body || {}).length) } };
   const res = { headers: {}, setHeader(key, val) { this.headers[key] = val; },
     status(code) { this.code = code; return this; }, json(value) { this.body = value; return this; } };
-  await handler(req, res);
+  await targetHandler(req, res);
   return res;
 }
 
@@ -126,5 +127,25 @@ async function call(method, body, query) {
     document.cases[1].events.at(-1).before.lead === first, '재배분과 이전 배분 이력 보존');
   res = await call('POST', { action: 'AI추천', caseId: secondId, version: 4 });
   check(res.code === 400, 'S7 AI추천은 아직 지원하지 않음');
+
+  let conflictDocument = { cases: [] };
+  let remainingConflicts = 2;
+  let conflictReads = 0;
+  const conflictStore = {
+    async read() { return { db: structuredClone(conflictDocument), etag: String(conflictReads++) }; },
+    async write(db) {
+      if (remainingConflicts-- > 0) {
+        const error = new Error('fake ETag conflict');
+        Object.setPrototypeOf(error, BlobPreconditionFailedError.prototype);
+        throw error;
+      }
+      conflictDocument = structuredClone(db);
+    }
+  };
+  const conflictHandler = createHandler(conflictStore);
+  res = await call('POST', { action: '접수', receipt: { sourceRef: '가상 동시 접수', member: '의원H' },
+    questions: [{ number: '1', text: '가상 동시 자료' }] }, null, conflictHandler);
+  check(res.code === 200 && res.body.added === 1 && conflictDocument.cases.length === 1,
+    'Blob ETag 충돌 뒤 다시 읽고 접수를 안전하게 재시도');
   console.log(`결과: ${count}개 항목 모두 통과, 가짜 저장소 ${writes}회 기록, 실제 Blob 쓰기 0회`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

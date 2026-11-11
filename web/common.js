@@ -33,7 +33,11 @@
       body: body ? JSON.stringify(body) : undefined
     });
     const data = await response.json().catch(() => null);
-    if (!response.ok || !data) throw new Error(data?.error || '서버 API에 연결하지 못했습니다. Vercel 배포 주소에서 열어 주세요.');
+    if (!response.ok || !data) {
+      const error = new Error(data?.error || '서버 API에 연결하지 못했습니다. Vercel 배포 주소에서 열어 주세요.');
+      error.status = response.status;
+      throw error;
+    }
     return data;
   }
 
@@ -186,10 +190,21 @@
     const result = { added: 0, skipped: 0 };
     for (const batch of batches.values()) {
       for (let offset = 0; offset < batch.questions.length; offset += 100) {
-        const saved = await request('POST', {
+        const payload = {
           ...batch,
           questions: batch.questions.slice(offset, offset + 100)
-        });
+        };
+        let saved;
+        for (let attempt = 0; ; attempt++) {
+          try {
+            saved = await request('POST', payload);
+            break;
+          } catch (error) {
+            // 접수는 같은 문항을 다시 보내도 서버가 중복을 건너뛰므로 충돌 응답만 안전하게 재시도한다.
+            if (error.status !== 409 || attempt >= 2) throw error;
+            await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1) + Math.floor(Math.random() * 200)));
+          }
+        }
         result.added += saved.added;
         result.skipped += saved.skipped;
       }

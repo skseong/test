@@ -4,6 +4,7 @@ const Papa = require('../web/lib/papaparse.min.js');
 const org = require('./org.json');
 
 const PATH = 'cases.json';
+const MAX_WRITE_ATTEMPTS = 8;
 class OpenAIRequestError extends Error {
   constructor(status, code, type) {
     super(`OpenAI HTTP ${status}`);
@@ -160,7 +161,7 @@ function createHandler(store = storage, ai = callOpenAI) {
           return send(res, 502, { error: 'AI 추천에 실패했습니다. Vercel 로그에서 OpenAI 오류를 확인해 주세요.' });
         }
       }
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
         const { db, etag } = await store.read();
         const changed = apply(db, req.body, org);
         if (req.body.action === '접수' && changed.result.added === 0) return send(res, 200, changed.result);
@@ -168,8 +169,10 @@ function createHandler(store = storage, ai = callOpenAI) {
           await store.write(changed.db, etag);
           return send(res, 200, changed.result);
         } catch (error) {
-          if (error instanceof BlobPreconditionFailedError && attempt < 4) {
-            await new Promise(resolve => setTimeout(resolve, 75 * (attempt + 1)));
+          if (error instanceof BlobPreconditionFailedError && attempt < MAX_WRITE_ATTEMPTS - 1) {
+            // 겹친 요청이 같은 간격으로 재경합하지 않도록 지수형 대기와 무작위 간격을 둔다.
+            const backoff = Math.min(800, 50 * (2 ** attempt));
+            await new Promise(resolve => setTimeout(resolve, backoff + Math.floor(Math.random() * 125)));
             continue;
           }
           throw error;
@@ -177,7 +180,12 @@ function createHandler(store = storage, ai = callOpenAI) {
       }
     } catch (error) {
       if (error instanceof FlowError) return send(res, error.status, { error: error.message });
-      if (error instanceof BlobPreconditionFailedError) return send(res, 409, { error: '동시 변경이 발생했습니다. 다시 시도해 주세요.' });
+      if (error instanceof BlobPreconditionFailedError) {
+        console.warn('cases.json 저장 충돌 재시도 초과', {
+          action: req.body?.action || 'unknown', attempts: MAX_WRITE_ATTEMPTS
+        });
+        return send(res, 409, { error: '동시 변경이 발생했습니다. 다시 시도해 주세요.' });
+      }
       console.error('문항 API 오류:', error);
       return send(res, 500, { error: '서버 저장소를 확인해 주세요.' });
     }
